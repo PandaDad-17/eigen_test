@@ -1,19 +1,11 @@
 #include <SDL3/SDL.h>
+#include <Eigen/Dense>
 #include <vector>
 #include <cmath>
-
-struct Vec3 
-{
-  float x, y, z;
-};
-
-struct Edge
-{
-  int v1, v2;
-};
+#include "camera.h"
 
 // Simple non-descript car model
-const std::vector<Vec3> vertices = 
+const std::vector<Eigen::Vector3f> vertices = 
 {
   // Body bottom
   {-2.0f, -0.5f,  1.0f}, { 2.0f, -0.5f,  1.0f}, { 2.0f, -0.5f, -1.0f}, {-2.0f, -0.5f, -1.0f},
@@ -28,7 +20,7 @@ const std::vector<Vec3> vertices =
   { 0.8f, -0.8f, -1.0f}, { 1.2f, -0.8f, -1.0f}, { 0.8f, -0.5f, -1.0f}, { 1.2f, -0.5f, -1.0f}  // RR
 };
 
-const std::vector<Edge> edges = 
+const std::vector<Eigen::Vector2i> edges = 
 {
   // Bottom rectangle
   {0, 1}, {1, 2}, {2, 3}, {3, 0},
@@ -50,6 +42,31 @@ const std::vector<Edge> edges =
   {24, 25}, {25, 27}, {27, 26}, {26, 24}  
 };  
 
+// https://www.songho.ca/opengl/gl_projectionmatrix.html
+Eigen::Matrix4f get_projection_matrix(float width, float height, const camera& cam)
+{
+  float aspect = width / height;
+  float near = cam.near_plane();
+  float far = cam.far_plane();
+  
+  float fov = 60.f * (EIGEN_PI / 180.f); // 60 degress to radians
+  float tangent = std::tan(fov * 0.5f);
+
+  float right = near * tangent;
+  float top = right / aspect;
+
+  Eigen::Matrix4f m = Eigen::Matrix4f::Zero();
+  m(0, 0) = near / right;
+  m(1, 1) = near / top;
+  m(2, 2) = -(far + near) / (far - near);
+  
+  // Note: Eigen matrices are collumn major.
+  m(2, 3) = -(2.f * far * near) / (far - near);
+  m(3, 2) = -1;
+
+  return m;
+}
+
 int main(int argc, char* argv[]) 
 {
   if (SDL_Init(SDL_INIT_VIDEO) == false) 
@@ -57,7 +74,7 @@ int main(int argc, char* argv[])
     return 1;
   }
 
-  SDL_Window* window = SDL_CreateWindow("SDL3 Wireframe Car", 800, 600, 0);
+  SDL_Window* window = SDL_CreateWindow("Eigen Test", 800, 600, 0);
   if (!window) 
   {
     SDL_Quit();
@@ -72,55 +89,88 @@ int main(int argc, char* argv[])
     return 1;
   }
 
+  SDL_SetWindowRelativeMouseMode(window, true);
+
+  camera cam(Eigen::Vector3f(0, 0, -10), 0.001f, 1000.f);
+  cam.look_at(Eigen::Vector3f::Zero());
+
   bool running = true;
-  float angle = 0.0f;
+  const float mouse_sensitivity = 0.002f;
+  const float move_speed = 0.1f;
 
   while (running) 
   {
     SDL_Event event;
     while (SDL_PollEvent(&event)) 
     {
-      if (event.type == SDL_EVENT_QUIT) 
+      switch (event.type)
       {
+      case SDL_EVENT_QUIT:
         running = false;
-      }
-      else if (event.type == SDL_EVENT_KEY_DOWN) 
+        break;
+      case SDL_EVENT_MOUSE_MOTION:
       {
-        if (event.key.key == SDLK_ESCAPE) 
-        {
-          running = false;
-        }
+        // x-movement = rotate around y-axis
+        float yaw = -event.motion.xrel * mouse_sensitivity;
+        
+        // y-movement = rotate around x-axis
+        // SDL y increases downward.
+        float pitch = -event.motion.yrel * mouse_sensitivity;
+         
+        cam.rotate(pitch, yaw, 0.f);
+        break;
+      }
+      default: 
+        break;
       }
     }
 
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    const bool* keys = SDL_GetKeyboardState(nullptr);
+    if (keys[SDL_SCANCODE_ESCAPE]) running = false;
+
+    if (keys[SDL_SCANCODE_W]) cam.move(0, 0, move_speed);
+    if (keys[SDL_SCANCODE_S]) cam.move(0, 0, -move_speed);
+    if (keys[SDL_SCANCODE_A]) cam.move(-move_speed, 0, 0);
+    if (keys[SDL_SCANCODE_D]) cam.move(move_speed, 0, 0);
+
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
     SDL_RenderClear(renderer);
     SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
 
-    angle += 0.01f;
-    float cosA = cos(angle);
-    float sinA = sin(angle);
+    Eigen::Matrix4f view = cam.get_view_matrix();
+    Eigen::Matrix4f projection = get_projection_matrix(800, 600, cam);
+    Eigen::Matrix4f VP = projection * view;
 
-    auto project = [&](Vec3 v) 
+    // TODO: Have the model continue to spin using this.
+    Eigen::Matrix4f model = Eigen::Matrix4f::Identity();
+    Eigen::Matrix4f MVP = VP * model;
+
+    auto project = [&](Eigen::Vector3f v) 
     {
-      // Rotate around Y axis
-      float x = v.x * cosA - v.z * sinA;
-      float z = v.x * sinA + v.z * cosA;
-      float y = v.y;
+      Eigen::Vector4f clip_space = MVP * v.homogeneous();
 
-      // Simple perspective projection
-      z += 5.0f; // Move back
-      float fov = 400.0f;
-      float px = (x * fov) / z + 400.0f;
-      float py = (-y * fov) / z + 300.0f;
-      return SDL_FPoint{px, py};
+      // Cull vertices off camera.
+      if (clip_space.w() < cam.near_plane())
+        return SDL_FPoint{ -1.f, -1.f };
+
+      // Normalized device coordinates (-1 to 1)
+      Eigen::Vector3f ndc = clip_space.head<3>() / clip_space.w();
+
+      Eigen::Vector2f screen_space(
+        (ndc.x() + 1.f) * 0.5f * 800.f,
+        (1.f - ndc.y()) * 0.5f * 600.f);
+
+      return SDL_FPoint{ screen_space.x(), screen_space.y() };
     };
 
     for (const auto& edge : edges)
     {
-      SDL_FPoint p1 = project(vertices[edge.v1]);
-      SDL_FPoint p2 = project(vertices[edge.v2]);
-      SDL_RenderLine(renderer, p1.x, p1.y, p2.x, p2.y);
+      SDL_FPoint p1 = project(vertices[edge[0]]);
+      SDL_FPoint p2 = project(vertices[edge[1]]);
+
+      // Check for culled.
+      if (p1.x >= 0 && p2.x >= 0)
+        SDL_RenderLine(renderer, p1.x, p1.y, p2.x, p2.y);
     }
 
     SDL_RenderPresent(renderer);
