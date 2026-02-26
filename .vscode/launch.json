@@ -24,12 +24,13 @@
       ],
       "preLaunchTask": "CMake: build",
       "windows": {
-          "environment": [
+        "type": "cppvsdbg",
+        "environment": [
           {
             "name": "PATH",
             "value": "${env:PATH};${workspaceFolder}/build/_deps/sdl3-build/Debug"
           }
-        ]     
+        ]
       } 
     }
   ]
