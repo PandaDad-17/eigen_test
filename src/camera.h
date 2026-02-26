@@ -3,34 +3,28 @@
 
 #include <Eigen/Geometry>
 
-class camera
+class alignas(16) Camera
 {
-  Eigen::Matrix3f rotation_matrix;
-  Eigen::Vector3f position;
-  float near, far;
-
-  [[nodiscard]] float normalize_angle(float a)
-  {
-    // Eigen internally wraps angles from -pi -> pi.
-    return Eigen::Rotation2D(a).smallestAngle();
-  }
+  Eigen::Quaternionf m_orientation{Eigen::Quaternionf::Identity()};
+  Eigen::Vector3f m_position{Eigen::Vector3f::Zero()};
+  float m_near, m_far;
+  float m_fieldOfView;
 
 public:
-  camera(const Eigen::Vector3f& pos, float near_plane, float far_plane)
-    : position(pos)
-    , near(near_plane)
-    , far(far_plane)
-  {
-  }
+  Camera() = default;
 
-  void move(float x, float y, float z);
-  void rotate(float pitch, float yaw, float roll);
-  void look_at(const Eigen::Vector3f& target);
+  void set(const Eigen::Vector3f& position, float nearPlane, float farPlane, float fov) noexcept;
+  
+  void move(Eigen::Vector3f translation) noexcept;
+  void rotate(float pitch, float yaw, float roll) noexcept;
+  void lookAt(const Eigen::Vector3f& target) noexcept;
 
-  Eigen::Matrix4f get_view_matrix() const;
+  [[nodiscard]] Eigen::Matrix4f viewMatrix() const noexcept;
 
-  float near_plane() const { return near; }
-  float far_plane() const { return far; }
+  [[nodiscard]] float nearPlane() const noexcept { return m_near; }
+  [[nodiscard]] float farPlane() const noexcept { return m_far; }
+
+  [[nodiscard]] float fov() const noexcept { return m_fieldOfView; }
 };
 
 #endif // __CAMERA_H__
