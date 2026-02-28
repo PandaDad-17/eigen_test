@@ -56,7 +56,7 @@ For more information on the specifics as to how this math works, please see [Lea
 ### Build Instructions
 ```bash
 # Clone the repository
-git clone [https://github.com/PandaDad-17/eigen_test.git](https://github.com/PandaDad-17/eigen_test.git)
+git clone https://github.com/PandaDad-17/eigen_test.git
 cd eigen_test
 
 # Configure and Build

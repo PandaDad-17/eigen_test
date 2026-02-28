@@ -23,7 +23,7 @@ void Camera::rotate(float pitch, float yaw, float roll) noexcept
   Eigen::Quaternionf qPitch(Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitX()));
   Eigen::Quaternionf qRoll(Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitZ()));
 
-  // Rotate by yaw first in order to keep orientation like that of a human head (and not tilt liek a plane).
+  // Rotate by yaw first in order to keep orientation like that of a human head (and not tilt like a plane).
   m_orientation = qYaw * m_orientation * qPitch * qRoll;
 
   // Avoid matrix drift from stacking floating point errors.
@@ -34,7 +34,7 @@ void Camera::lookAt(const Eigen::Vector3f& target) noexcept
 {
   Eigen::Vector3f forward = (m_position - target).normalized();
   Eigen::Vector3f right = Eigen::Vector3f::UnitY().cross(forward).normalized();
-  Eigen::Vector3f up = right.cross(right);
+  Eigen::Vector3f up = right.cross(right).normalized();
 
   Eigen::Matrix3f rotationMatrix;
   rotationMatrix.col(0) = right;
